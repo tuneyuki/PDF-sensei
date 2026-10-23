@@ -95,5 +95,5 @@ gs://<bucket>/books/{book_id}/v{version}/{extractor}/     入稿の成果物（�
 ## 6. 次のステップ
 
 1. 実際の GCP プロジェクトで入稿ジョブを動かす（deploy/README.md）。
-2. チャット API（Cloud Run サービス）: 先生の道具と根拠の検証、Vertex AI 上の Claude の呼び出し。
+2. チャット API（Cloud Run サービス）: 先生の道具と根拠の検証、Vertex AI 上の Claude の呼び出し。処理の組み立てとレイテンシ目標（TTFT 10 秒以内）は [07](07-answer-latency.md)。
 3. 入稿の自動起動（Cloud Storage へのアップロード → Eventarc → Workflows 経由でジョブ起動）。

@@ -10,6 +10,7 @@ EPUB / PDF の書籍を元に、その本の「先生」として要約・解説
 - [04. 共通パイプラインと特徴パッケージ](docs/design/04-architecture-traits.md)
 - [05. チャンク分割・登録・検索の実装と評価](docs/design/05-index-and-search.md)
 - [06. GCP（Cloud Run）での運用構成](docs/design/06-deployment-gcp.md)（デプロイ手順: [deploy/README.md](deploy/README.md)）
+- [07. 回答までの処理とレイテンシ](docs/design/07-answer-latency.md)
 
 ## 動かし方
 
