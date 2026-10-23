@@ -7,6 +7,7 @@
     sensei embed --book BOOK_ID --embedder ...
     sensei search "質問" [--book BOOK_ID] [--mode hybrid|fts|vector] [--embedder ...]
     sensei eval eval/progit-ja.yaml [--book BOOK_ID] [--mode ...] [--embedder ...]
+    sensei job ingest gs://bucket/raw/book.pdf     # Cloud Run ジョブ: 入稿 → 登録を 1 回で実行
 
 DB の接続先は環境変数 SENSEI_DSN（既定: postgresql://sensei:sensei@localhost:5432/sensei）。
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -64,7 +66,17 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--embedder")
     ev.add_argument("-v", "--verbose", action="store_true")
 
+    job = sub.add_parser("job", help="Cloud Run ジョブ用（入稿 → 登録）")
+    job.add_argument("action", choices=["ingest"])
+    job.add_argument("paths", nargs="+", help="原本（ローカル または gs://）")
+    job.add_argument("--out", default=os.environ.get("SENSEI_OUT", "out"), help="成果物の置き場（既定 $SENSEI_OUT）")
+    job.add_argument("--embedder", default=os.environ.get("SENSEI_EMBEDDER"), help="既定 $SENSEI_EMBEDDER")
+    job.add_argument("--extractor", default="auto", choices=["auto", "epub", "pymupdf", "docling"])
+    job.add_argument("--force", action="store_true")
+
     args = ap.parse_args(argv)
+    if args.cmd == "job":
+        return _job(args)
     if args.cmd in ("db", "index", "embed", "search", "eval"):
         return _db_commands(args)
     if args.cmd == "ingest":
@@ -142,6 +154,34 @@ def _db_commands(args) -> int:
                 for q in r["results"]:
                     print(f"  [{q.rank or '-'}] {q.q}  → {q.top}")
     return 0
+
+
+def _job(args) -> int:
+    """入稿 → QA → 登録。QA が fail の書籍は登録しない。1 冊でも失敗したら終了コード 1。"""
+    from .db import store
+    from .embed import get_embedder
+    from .pipeline import IngestOptions, ingest
+
+    embedder = get_embedder(args.embedder) if args.embedder else None
+    failed = 0
+    with store.connect() as conn:
+        store.init_schema(conn)
+        for path in args.paths:
+            try:
+                res = ingest(path, IngestOptions(out_dir=args.out, extractor=args.extractor, force=args.force))
+                status = res.report["status"]
+                summary = {"path": path, "out": str(res.out_dir), "qa": status, "skipped": res.skipped,
+                           "timings": {k: round(v, 1) for k, v in res.timings.items()}}
+                if status == "fail":
+                    failed += 1
+                    summary["indexed"] = False
+                else:
+                    summary["indexed"] = store.index_book(conn, res.out_dir, embedder=embedder)
+                print(json.dumps(summary, ensure_ascii=False), flush=True)
+            except Exception as e:  # noqa: BLE001 - 1 冊の失敗で他の書籍を止めない
+                failed += 1
+                print(json.dumps({"path": path, "error": f"{type(e).__name__}: {e}"}, ensure_ascii=False), flush=True)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

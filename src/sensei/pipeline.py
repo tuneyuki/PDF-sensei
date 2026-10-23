@@ -2,6 +2,9 @@
 
 DB への登録（[6] Index）は副作用があるため別コマンド（sensei index）で行う。
 
+入力や出力先に gs://（Cloud Storage）を指定した場合も、処理はローカルの一時フォルダで行い、
+前後で成果物を取り寄せ・書き戻す（sensei.storage）。
+
 各段の成果物を out/{book_id}/v{version}/ に保存し、manifest.json に
 (入力ハッシュ, 段のバージョン, 設定) を記録する。同じ条件での再実行はスキップする。
 """
@@ -11,11 +14,12 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import chunk, qa, render, structure
+from . import chunk, qa, render, storage, structure
 from .intake import IntakeResult, intake
 from .model import DocTree, RawDoc
 from .textnorm import NORMALIZE_VERSION
@@ -23,7 +27,7 @@ from .textnorm import NORMALIZE_VERSION
 
 @dataclass
 class IngestOptions:
-    out_dir: Path = Path("out")
+    out_dir: Path | str = Path("out")  # ローカルフォルダ または gs://bucket/prefix
     extractor: str = "auto"  # auto | epub | pymupdf | docling
     detect_tables: bool = True
     book_id: str | None = None
@@ -35,7 +39,7 @@ class IngestOptions:
 class IngestResult:
     doc: DocTree
     chunks: chunk.ChunkSet
-    out_dir: Path
+    out_dir: Path | str  # 成果物の置き場（gs:// の場合は書き戻し先）
     report: dict
     timings: dict = field(default_factory=dict)
     skipped: list[str] = field(default_factory=list)
@@ -80,6 +84,35 @@ def _key(*parts) -> str:
 
 def ingest(path: str | Path, opts: IngestOptions | None = None) -> IngestResult:
     opts = opts or IngestOptions()
+    if not storage.is_gcs(path) and not storage.is_gcs(opts.out_dir):
+        return _ingest_local(Path(path), replace(opts, out_dir=Path(opts.out_dir)))
+
+    with tempfile.TemporaryDirectory(prefix="sensei-") as tmp:
+        tmp = Path(tmp)
+        local_src = Path(path)
+        if storage.is_gcs(path):
+            local_src = storage.download_file(str(path), tmp / "src" / str(path).rsplit("/", 1)[-1])
+        if not storage.is_gcs(opts.out_dir):
+            return _ingest_local(local_src, replace(opts, out_dir=Path(opts.out_dir)))
+
+        src = intake(local_src)
+        book_id = opts.book_id or src.default_book_id
+        ext_name, _ = _extractor_for(src, opts)
+        rel = (book_id, f"v{opts.version}", ext_name)
+        remote = storage.join(opts.out_dir, *rel)
+        local_root = tmp / "out"
+        local_dir = local_root.joinpath(*rel)
+        # キャッシュ判定に使う成果物だけ取り寄せる（図版は大きいので取り寄せない）
+        storage.download_prefix(remote, local_dir, exclude_dirs=("assets",))
+        res = _ingest_local(local_src, replace(opts, out_dir=local_root, book_id=book_id))
+        if "extract" not in res.skipped:
+            storage.delete_prefix(storage.join(remote, "assets"))  # 抽出し直したので古い図版を消す
+        storage.upload_dir(local_dir, remote)
+        res.out_dir = remote
+        return res
+
+
+def _ingest_local(path: Path, opts: IngestOptions) -> IngestResult:
     timings: dict[str, float] = {}
     skipped: list[str] = []
 

@@ -15,7 +15,8 @@ dependencies = [
 docling = ["docling>=2.0"]
 st = ["sentence-transformers>=3.0"]   # ローカル埋め込み（例: cl-nagoya/ruri-v3-310m）
 voyage = ["voyageai>=0.3"]           # Voyage AI 埋め込み（VOYAGE_API_KEY）
-dev = ["pytest>=8"]
+gcp = ["google-genai>=1.0", "google-cloud-storage>=2.10"]   # Cloud Run 本番（Vertex AI・Cloud Storage）
+dev = ["pytest>=8", "gcp-storage-emulator>=2024.0"]
 
 [project.scripts]
 sensei = "sensei.cli:main"

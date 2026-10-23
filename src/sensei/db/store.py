@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from importlib import resources
 from pathlib import Path
 
 import psycopg
 from psycopg import sql
 
+from .. import storage
 from ..chunk import ChunkSet
 from ..embed import Embedder, embedding_text
 from ..fts import document_text
@@ -19,8 +21,30 @@ from ..model import DocTree
 DEFAULT_DSN = "postgresql://sensei:sensei@localhost:5432/sensei"
 
 
+def dsn_from_env() -> str:
+    """接続先。SENSEI_DSN があればそれを使う。
+
+    Cloud Run では Cloud SQL のインスタンスを接続設定（--set-cloudsql-instances）で付け、
+    SENSEI_DB_INSTANCE（project:region:instance）・SENSEI_DB_USER・SENSEI_DB_PASSWORD（Secret Manager から）・
+    SENSEI_DB_NAME を渡すと、Unix ソケット（/cloudsql/...）経由の接続文字列を組み立てる。
+    """
+    if os.environ.get("SENSEI_DSN"):
+        return os.environ["SENSEI_DSN"]
+    inst = os.environ.get("SENSEI_DB_INSTANCE")
+    if inst:
+        from psycopg.conninfo import make_conninfo
+
+        return make_conninfo(
+            host=f"/cloudsql/{inst}",
+            user=os.environ.get("SENSEI_DB_USER", "sensei"),
+            password=os.environ.get("SENSEI_DB_PASSWORD", ""),
+            dbname=os.environ.get("SENSEI_DB_NAME", "sensei"),
+        )
+    return DEFAULT_DSN
+
+
 def connect(dsn: str | None = None) -> psycopg.Connection:
-    return psycopg.connect(dsn or os.environ.get("SENSEI_DSN", DEFAULT_DSN))
+    return psycopg.connect(dsn or dsn_from_env())
 
 
 def init_schema(conn: psycopg.Connection) -> None:
@@ -48,6 +72,7 @@ def ensure_vector_index(conn: psycopg.Connection, model: str, dim: int) -> None:
 
 
 def load_outputs(out_dir: Path) -> tuple[DocTree, ChunkSet, dict, dict]:
+    """入稿の成果物を読む（out_dir はローカルフォルダ）。"""
     doc = DocTree.model_validate_json((out_dir / "doc.json").read_text())
     chunks = ChunkSet.model_validate_json((out_dir / "chunks.json").read_text())
     manifest = json.loads((out_dir / "manifest.json").read_text())
@@ -57,12 +82,25 @@ def load_outputs(out_dir: Path) -> tuple[DocTree, ChunkSet, dict, dict]:
 
 def index_book(
     conn: psycopg.Connection,
-    out_dir: Path,
+    out_dir: Path | str,
     embedder: Embedder | None = None,
     activate: bool = True,
 ) -> dict:
-    """入稿の成果物（doc.json / chunks.json）を登録する。同じ (book_id, version) は置き換える。"""
-    doc, chunks, manifest, qa = load_outputs(out_dir)
+    """入稿の成果物（doc.json / chunks.json）を登録する。同じ (book_id, version) は置き換える。
+
+    out_dir はローカルフォルダ または gs://…（成果物を一時フォルダに取り寄せて読む）。
+    """
+    if storage.is_gcs(out_dir):
+        with tempfile.TemporaryDirectory(prefix="sensei-") as tmp:
+            for name in ("doc.json", "chunks.json", "manifest.json", "qa.json"):
+                storage.download_file(storage.join(out_dir, name), Path(tmp) / name)
+            return _index_loaded(conn, *load_outputs(Path(tmp)), storage.join(out_dir, "doc.json"), embedder, activate)
+    out_dir = Path(out_dir)
+    return _index_loaded(conn, *load_outputs(out_dir), str((out_dir / "doc.json").resolve()), embedder, activate)
+
+
+def _index_loaded(conn, doc: DocTree, chunks: ChunkSet, manifest: dict, qa: dict, canonical_uri: str,
+                  embedder: Embedder | None, activate: bool) -> dict:
     b = doc.book
 
     vectors = None
@@ -83,7 +121,7 @@ def index_book(
                  extractor, canonical_uri, status, stats, qa)
                VALUES (%s, %s, %s, %s, %s, %s, %s, 'indexed', %s, %s)""",
             (b.book_id, b.version, b.source_sha256, b.source_format, b.source_filename,
-             manifest.get("extractor"), str((out_dir / "doc.json").resolve()),
+             manifest.get("extractor"), canonical_uri,
              json.dumps(doc.stats, ensure_ascii=False), json.dumps(qa, ensure_ascii=False)),
         )
         with conn.cursor() as cur:
