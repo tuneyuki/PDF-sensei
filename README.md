@@ -7,6 +7,7 @@ EPUB / PDF の書籍を元に、その本の「先生」として要約・解説
 - [01. データ格納形式と入稿パイプライン設計](docs/design/01-data-model-and-ingestion.md)
 - [02. 入稿パイプライン MVP 前半の実装と検証（Pro Git）](docs/design/02-ingestion-mvp-validation.md)
 - [03. 知識カードと「先生」の設計方針](docs/design/03-knowledge-units-and-teacher.md)
+- [04. 共通パイプラインと特徴パッケージ](docs/design/04-architecture-traits.md)
 
 ## 入稿パイプライン（MVP 前半）
 
