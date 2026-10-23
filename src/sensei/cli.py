@@ -2,6 +2,13 @@
 
     sensei ingest BOOK.pdf [--extractor pymupdf|docling] [--out out]
     sensei compare out/.../doc.json out/.../doc.json
+    sensei db init
+    sensei index out/{book_id}/v1/{extractor} [--embedder st:cl-nagoya/ruri-v3-310m]
+    sensei embed --book BOOK_ID --embedder ...
+    sensei search "質問" [--book BOOK_ID] [--mode hybrid|fts|vector] [--embedder ...]
+    sensei eval eval/progit-ja.yaml [--book BOOK_ID] [--mode ...] [--embedder ...]
+
+DB の接続先は環境変数 SENSEI_DSN（既定: postgresql://sensei:sensei@localhost:5432/sensei）。
 """
 
 from __future__ import annotations
@@ -30,7 +37,36 @@ def main(argv: list[str] | None = None) -> int:
     cmp_.add_argument("b")
     cmp_.add_argument("--out", help="Markdown レポートの出力先")
 
+    db = sub.add_parser("db", help="DB の操作")
+    db.add_argument("action", choices=["init"])
+
+    idx = sub.add_parser("index", help="入稿の成果物（doc.json / chunks.json）を DB に登録する")
+    idx.add_argument("out_dirs", nargs="+")
+    idx.add_argument("--embedder", help="例: st:cl-nagoya/ruri-v3-310m, voyage:voyage-3.5, hash")
+    idx.add_argument("--no-activate", action="store_true", help="登録だけして公開中バージョンを切り替えない")
+
+    emb = sub.add_parser("embed", help="登録済みの書籍に埋め込みを追加する")
+    emb.add_argument("--book", required=True)
+    emb.add_argument("--version", type=int)
+    emb.add_argument("--embedder", required=True)
+
+    sr = sub.add_parser("search", help="検索")
+    sr.add_argument("query")
+    sr.add_argument("--book", action="append")
+    sr.add_argument("--mode", default="hybrid", choices=["hybrid", "fts", "vector"])
+    sr.add_argument("--embedder")
+    sr.add_argument("-k", type=int, default=5)
+
+    ev = sub.add_parser("eval", help="検索の評価")
+    ev.add_argument("spec")
+    ev.add_argument("--book", action="append")
+    ev.add_argument("--mode", default="hybrid", choices=["hybrid", "fts", "vector"])
+    ev.add_argument("--embedder")
+    ev.add_argument("-v", "--verbose", action="store_true")
+
     args = ap.parse_args(argv)
+    if args.cmd in ("db", "index", "embed", "search", "eval"):
+        return _db_commands(args)
     if args.cmd == "ingest":
         from .intake import IntakeError
         from .pipeline import IngestOptions, ingest
@@ -69,6 +105,43 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report["summary"], ensure_ascii=False))
         return 0
     return 1
+
+
+
+def _db_commands(args) -> int:
+    from .db import store
+    from .embed import get_embedder
+
+    embedder = get_embedder(args.embedder) if getattr(args, "embedder", None) else None
+    with store.connect() as conn:
+        if args.cmd == "db":
+            store.init_schema(conn)
+            print("schema ok")
+        elif args.cmd == "index":
+            for d in args.out_dirs:
+                r = store.index_book(conn, Path(d), embedder=embedder, activate=not args.no_activate)
+                print(json.dumps(r, ensure_ascii=False))
+        elif args.cmd == "embed":
+            version = args.version or conn.execute(
+                "SELECT active_version FROM books WHERE book_id = %s", (args.book,)).fetchone()[0]
+            print(f"embedded {store.embed_book(conn, args.book, version, embedder)} chunks with {embedder.name}")
+        elif args.cmd == "search":
+            from .search import search
+
+            for i, h in enumerate(search(conn, args.query, k=args.k, mode=args.mode, embedder=embedder,
+                                         book_ids=args.book), start=1):
+                print(f"{i}. {h.citation}  score={h.score:.4f} {h.ranks}")
+                print("   " + h.text[:160].replace("\n", " "))
+        elif args.cmd == "eval":
+            from .evaluate import run_eval
+
+            r = run_eval(conn, Path(args.spec), mode=args.mode, embedder=embedder, book_ids=args.book)
+            print(f"{r['name']} mode={r['mode']} model={r['model']} books={r['books']} n={r['n']}")
+            print(f"hit@1={r['hit@1']:.1%} hit@5={r['hit@5']:.1%} hit@10={r['hit@10']:.1%} MRR={r['mrr']:.3f}")
+            if args.verbose:
+                for q in r["results"]:
+                    print(f"  [{q.rank or '-'}] {q.q}  → {q.top}")
+    return 0
 
 
 if __name__ == "__main__":

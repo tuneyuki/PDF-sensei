@@ -1,4 +1,6 @@
-"""入稿パイプライン（MVP 前半: Intake → Extract → Normalize/Structure → Canonical 出力 → QA）。
+"""入稿パイプライン（Intake → Extract → Normalize/Structure → Canonical 出力 → Chunk → QA）。
+
+DB への登録（[6] Index）は副作用があるため別コマンド（sensei index）で行う。
 
 各段の成果物を out/{book_id}/v{version}/ に保存し、manifest.json に
 (入力ハッシュ, 段のバージョン, 設定) を記録する。同じ条件での再実行はスキップする。
@@ -13,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import qa, render, structure
+from . import chunk, qa, render, structure
 from .intake import IntakeResult, intake
 from .model import DocTree, RawDoc
 from .textnorm import NORMALIZE_VERSION
@@ -32,6 +34,7 @@ class IngestOptions:
 @dataclass
 class IngestResult:
     doc: DocTree
+    chunks: chunk.ChunkSet
     out_dir: Path
     report: dict
     timings: dict = field(default_factory=dict)
@@ -127,8 +130,22 @@ def ingest(path: str | Path, opts: IngestOptions | None = None) -> IngestResult:
         (out / "doc.md").write_text(render.render_markdown(doc))
         manifest["stages"]["structure"] = {"key": structure_key, "version": structure.STRUCTURE_VERSION, "output": "doc.json"}
 
+    # [4] Chunk
+    chunk_params = chunk.ChunkParams()
+    chunk_key = _key(structure_key, chunk.CHUNK_VERSION, chunk_params.model_dump())
+    chunks_path = out / "chunks.json"
+    if cached("chunk", chunk_key, chunks_path):
+        chunks = chunk.ChunkSet.model_validate_json(chunks_path.read_text())
+        skipped.append("chunk")
+    else:
+        t = time.perf_counter()
+        chunks = chunk.chunk_doc(doc, chunk_params)
+        timings["chunk"] = time.perf_counter() - t
+        chunks_path.write_text(chunks.model_dump_json(indent=1, exclude_none=True))
+        manifest["stages"]["chunk"] = {"key": chunk_key, "version": chunk.CHUNK_VERSION, "output": "chunks.json"}
+
     # [7] QA（毎回実行。軽い）
-    report = qa.check(doc)
+    report = qa.check(doc, chunks)
     (out / "qa.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
 
     manifest.update(
@@ -141,4 +158,4 @@ def ingest(path: str | Path, opts: IngestOptions | None = None) -> IngestResult:
         }
     )
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=1))
-    return IngestResult(doc=doc, out_dir=out, report=report, timings=timings, skipped=skipped)
+    return IngestResult(doc=doc, chunks=chunks, out_dir=out, report=report, timings=timings, skipped=skipped)

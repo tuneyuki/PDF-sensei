@@ -42,7 +42,7 @@ def test_epub_ingest(sample_epub, tmp_path):
 
     # 2 回目はキャッシュ
     res2 = ingest(sample_epub, IngestOptions(out_dir=tmp_path / "out"))
-    assert res2.skipped == ["extract", "structure"]
+    assert res2.skipped == ["extract", "structure", "chunk"]
 
 
 def test_pdf_ingest(sample_pdf, tmp_path):

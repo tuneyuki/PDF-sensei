@@ -23,7 +23,7 @@ from ..intake import IntakeResult
 from ..model import Asset, Block, BookMeta, Extraction, Locator, PdfLocator, RawDoc, TocEntry
 from ..textnorm import is_cjk, join_lines, normalize_text, search_key
 
-EXTRACTOR_VERSION = "0.3.2"
+EXTRACTOR_VERSION = "0.3.3"
 
 MONO_FONT_RE = re.compile(
     r"mono|courier|consol|menlo|monaco|inconsolata|source ?code|code|fixed|typewriter|\dmn\b|\dmn-|^cmtt|lmmono",
@@ -491,8 +491,10 @@ def _mark_minor_headings(groups: list[_Group], level: int) -> None:
         nxt = groups[i + 1]
         if nxt.type not in ("paragraph", "list", "code", "table", "figure"):
             continue
-        if "。" in text or (not ln.bold and re.search(r"[.!?]\s", text)):
+        if "。" in text or "、" in text or (not ln.bold and re.search(r"[.!?]\s", text)):
             continue
+        if "\u3041" <= text[0] <= "\u309f":
+            continue  # ひらがなで始まる行は文の途中（「と打ち込んで…」）であって見出しではない
         g.type = "heading"
         g.level = level
         g.caption = "minor"

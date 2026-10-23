@@ -10,7 +10,7 @@ from .model import DocTree
 PUA_RE = re.compile("[-]")
 
 
-def check(doc: DocTree) -> dict:
+def check(doc: DocTree, chunks=None) -> dict:
     checks: list[dict] = []
 
     def add(name: str, level: str, ok: bool, value, threshold, message: str):
@@ -52,6 +52,16 @@ def check(doc: DocTree) -> dict:
 
     no_img = sum(1 for b in doc.blocks if b.type == "figure" and not b.asset_id)
     add("figures_without_image", "info", True, no_img, "-", "画像を特定できなかった図（ベクター図など）")
+
+    if chunks is not None:
+        # 目次・索引以外の本文ブロックがすべてどれかのチャンクに入っているか
+        skip_sections = {s.section_id for s in doc.sections if s.role in ("toc", "index")}
+        need = {b.block_id for b in doc.blocks if b.type != "heading" and b.text.strip() and b.section_id not in skip_sections}
+        have = {bid for c in chunks.chunks for bid in c.block_ids}
+        cov = len(need & have) / max(1, len(need))
+        add("chunk_coverage", "fail", cov >= 0.999, round(cov, 4), ">= 0.999", "チャンクに入っていない本文ブロックがあります")
+        over = [c.chunk_id for c in chunks.chunks if c.token_count > chunks.params.max_tokens * 1.5]
+        add("oversized_chunks", "review", not over, len(over), "== 0", f"上限を大きく超えるチャンク: {over[:5]}")
 
     status = "ok"
     if any(not c["ok"] and c["level"] == "fail" for c in checks):

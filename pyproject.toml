@@ -7,10 +7,14 @@ dependencies = [
     "pydantic>=2.7",
     "lxml>=5.0",
     "pymupdf>=1.24",
+    "psycopg[binary]>=3.1",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 docling = ["docling>=2.0"]
+st = ["sentence-transformers>=3.0"]   # ローカル埋め込み（例: cl-nagoya/ruri-v3-310m）
+voyage = ["voyageai>=0.3"]           # Voyage AI 埋め込み（VOYAGE_API_KEY）
 dev = ["pytest>=8"]
 
 [project.scripts]
