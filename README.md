@@ -11,6 +11,7 @@ EPUB / PDF の書籍を元に、その本の「先生」として要約・解説
 - [05. チャンク分割・登録・検索の実装と評価](docs/design/05-index-and-search.md)
 - [06. GCP（Cloud Run）での運用構成](docs/design/06-deployment-gcp.md)（デプロイ手順: [deploy/README.md](deploy/README.md)）
 - [07. 回答までの処理とレイテンシ](docs/design/07-answer-latency.md)
+- [08. MVP1 の題材と入稿コストの試算](docs/design/08-mvp1-corpus-and-ingest-cost.md)（題材の取得: `scripts/fetch-corpus.sh`）
 
 ## 動かし方
 
