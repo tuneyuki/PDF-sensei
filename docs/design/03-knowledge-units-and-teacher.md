@@ -248,7 +248,7 @@ CREATE TABLE units (
   is_ad          boolean DEFAULT false,
   geom           geography(Point), -- 位置（PostGIS。距離・駅からの近さの検索用）
   hours          jsonb,            -- 営業時間の構造化データ
-  embedding      vector(1024),     -- title + summary + 主要属性
+  embedding      vector(1024),     -- title + summary + 主要属性（後の決定: チャンクと同じくモデルごとに別テーブルで持つ。05 §2.2）
   search_text    text,             -- 全文検索用（NFKC・空白除去は search_key と同じ規則）
   reviewed       boolean DEFAULT false
 );
@@ -284,6 +284,8 @@ CREATE INDEX ON units USING hnsw (embedding vector_cosine_ops);
 
 ### 4.2 共通の回答手順
 
+> **後の決定（後勝ち）**: 実際の処理の組み立ては [07](07-answer-latency.md) の案 B に従う。①（分解）と③（選定）は 1 回の計画呼び出しと回答の中にまとめ、⑥（検証）は回答の後に行う。
+
 ```
 ① 質問の分解: 依頼の種類（要約／解説／当てはめ／推薦）と、
    ユーザーの状況を本の言葉・条件に言い換える
@@ -297,6 +299,8 @@ CREATE INDEX ON units USING hnsw (embedding vector_cosine_ops);
 ```
 
 根拠の受け渡しには Claude API の引用機能（Citations: 渡した文書のどこを根拠にしたかを回答と一緒に返す）の利用を検討する。根拠ブロックを文書として渡せば、引用箇所がブロック単位で返り、ページ番号・位置へ機械的に変換できる。詳細は実装時に確認する。
+
+> **後の決定（後勝ち）**: 引用機能を使う。Vertex AI でも使えることを確認した。ただし出力形式の固定（structured outputs）とは併用できないため、引用付きの回答と構造化した出力（計画など）は別の呼び出しにする（[07](07-answer-latency.md)）。
 
 ### 4.3 例 1: コードレビュー（『リーダブルコード』）
 

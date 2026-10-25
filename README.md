@@ -4,6 +4,9 @@ EPUB / PDF の書籍を元に、その本の「先生」として要約・解説
 
 ## 設計
 
+設計は後勝ち（後から決めた内容を正とする）で更新している。**現在有効な決定は [00. 決定事項の一覧](docs/design/00-decisions.md) にまとめてある。** 個々の文書の古い記述には、後の決定への参照を書き足している。
+
+- [00. 決定事項の一覧（後勝ち）](docs/design/00-decisions.md)
 - [01. データ格納形式と入稿パイプライン設計](docs/design/01-data-model-and-ingestion.md)
 - [02. 入稿パイプライン MVP 前半の実装と検証（Pro Git）](docs/design/02-ingestion-mvp-validation.md)
 - [03. 知識カードと「先生」の設計方針](docs/design/03-knowledge-units-and-teacher.md)
@@ -29,6 +32,7 @@ uv venv -p 3.12 .venv && uv pip install -p .venv/bin/python -e '.[dev,st]'
 .venv/bin/sensei compare out/A/doc.json out/B/doc.json
 
 # DB（ローカルの Docker: PostgreSQL 16 + pgvector）に登録して検索
+# 埋め込みの指定は手元で試す例。本番の既定は vertex:gemini-embedding-001?dim=768（docs/design/06）
 docker compose -f docker/compose.yml up -d
 export SENSEI_DSN=postgresql://sensei:sensei@localhost:5432/sensei
 .venv/bin/sensei db init

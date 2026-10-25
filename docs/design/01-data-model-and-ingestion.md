@@ -2,6 +2,14 @@
 
 EPUB / PDF の書籍を元に「その本の先生」として振る舞うチャットボットのための、データ格納形式と入稿（ingestion）パイプラインの設計案。
 
+> 本書は最初の設計案。その後の検討で次の点が置き換わっている（後勝ち。現在の決定は [00](00-decisions.md)）。
+> - ファイルの置き場は S3 ではなく Cloud Storage（`gs://`）、入稿は Cloud Run ジョブ（[06](06-deployment-gcp.md)）
+> - `concepts` テーブルは知識カード（`units`）に置き換え（[03](03-knowledge-units-and-teacher.md) §3）
+> - 埋め込みは `vector(1024)` 固定ではなく、モデルごとに別行で持つ（[05](05-index-and-search.md) §2.2）。本番は Vertex AI の埋め込み（[06](06-deployment-gcp.md)）
+> - 日本語の全文検索は拡張なしの文字 bigram（[05](05-index-and-search.md) §2.3）
+> - PDF の抽出は PyMuPDF が既定。Docling は未検証（[02](02-ingestion-mvp-validation.md)）
+> - 人手確認は全件ではなく例外・抜き取り・質問テスト（[09](09-review-strategy.md)）
+
 ## 1. 要件から導く設計方針
 
 チャットボットに求める振る舞いと、それに必要なデータの粒度を対応させる。
@@ -120,6 +128,8 @@ EPUB・PDF 共通の中間表現。JSON を正とし、人間のレビュー・L
 
 まずは **PostgreSQL 1台に集約**（pgvector でベクトル検索、PGroonga または pg_bigm で日本語全文検索）。規模が大きくなったら検索部分を OpenSearch 等に切り出す。
 
+> **後の決定（後勝ち）**: 全文検索は拡張を使わず文字 bigram で実装した（[05](05-index-and-search.md) §2.3）。本番は Cloud SQL（[06](06-deployment-gcp.md)）。
+
 ```sql
 -- 書籍とバージョン
 CREATE TABLE books (
@@ -197,6 +207,7 @@ CREATE TABLE summaries (
 );
 
 -- ナレッジ（概念・フレームワーク・主張）
+-- 後の決定: concepts は知識カード units に置き換え（03 §3.4）
 CREATE TABLE concepts (
   concept_id   text PRIMARY KEY,
   book_id      text,
@@ -279,7 +290,7 @@ CREATE TABLE concept_relations (     -- 任意: 簡易ナレッジグラフ
 - 目次は PDF のアウトライン（しおり）を最優先、なければフォントサイズ・太字・番号パターン（「第N章」「1.2」）から見出しを推定。
 - ヘッダ・フッタ・柱・ノンブルは「複数ページで同位置に繰り返し出る短いテキスト」として除去。
 - ライブラリ候補（比較検証して選定する）:
-  - **Docling**（レイアウト解析・表・読み順・OCR 統合、構造化出力）← 第一候補
+  - **Docling**（レイアウト解析・表・読み順・OCR 統合、構造化出力）← 第一候補（後の決定: 既定は PyMuPDF。Docling は未検証。[02](02-ingestion-mvp-validation.md)）
   - Marker / MinerU（Markdown 化の品質が高い）
   - PyMuPDF（高速・bbox 取得、ベースライン/フォールバック）
   - OCR: Docling 内蔵 OCR、または LLM ビジョン（ページ画像を渡して構造化テキスト化）。縦書き・図表の多い和書は LLM ビジョンが有利な場合が多い。
@@ -331,7 +342,7 @@ CREATE TABLE concept_relations (     -- 任意: 簡易ナレッジグラフ
 
 - 入稿はバッチ的で LLM 呼び出しが長時間になりうるため、**ジョブキュー + ワーカー**構成にする。
   - MVP: Python CLI（`sensei ingest path/to/book.pdf`）で同期実行。
-  - 本番: アップロード → キュー（SQS / Cloud Tasks / Redis 等）→ ワーカーで段ごとに実行、`ingestion_jobs` テーブルで進捗管理・失敗段から再開。
+  - 本番: アップロード → キュー（SQS / Cloud Tasks / Redis 等）→ ワーカーで段ごとに実行、`ingestion_jobs` テーブルで進捗管理・失敗段から再開。（後の決定: Cloud Run ジョブ + 段ごとの成果物キャッシュ。[06](06-deployment-gcp.md)）
 - LLM 呼び出しはバッチ API を使うとコストを下げられる（要約・概念抽出は即時性不要）。
 
 ```sql

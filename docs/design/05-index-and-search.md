@@ -2,6 +2,8 @@
 
 [04](04-architecture-traits.md) の進め方 1（共通の土台）のうち、**[4] Chunk → [6] Index → 検索 → 検索の評価** を実装した。DB はローカルの Docker（PostgreSQL 16 + pgvector）で動かす。
 
+> **後の決定（後勝ち）**: 本番の埋め込みは Vertex AI（`vertex:gemini-embedding-001?dim=768`）、DB は Cloud SQL（[06](06-deployment-gcp.md)）。本書の ruri 等の指定はローカルで試す場合の選択肢として残す。検索精度の評価はいったん止めている。
+
 ## 1. 手元での動かし方
 
 ```bash
@@ -65,7 +67,8 @@ DB の結合テストは `SENSEI_TEST_DSN` を設定したときだけ動く（`
 
 | 指定 | 内容 |
 |---|---|
-| `st:cl-nagoya/ruri-v3-310m` | ローカル実行（API キー不要）。日本語向けの推奨。検索文・文書の接頭辞（`検索クエリ: ` / `検索文書: `）は自動で付ける |
+| `vertex:gemini-embedding-001?dim=768` | **本番の既定**（後の決定、[06](06-deployment-gcp.md)）。Vertex AI。文書用・検索文用のタスク種別を自動で付け分ける |
+| `st:cl-nagoya/ruri-v3-310m` | ローカル実行（API キー不要）。日本語向け。検索文・文書の接頭辞（`検索クエリ: ` / `検索文書: `）は自動で付ける |
 | `st:intfloat/multilingual-e5-large` | ローカル実行。多言語 |
 | `voyage:voyage-3.5` | Voyage AI API（`VOYAGE_API_KEY`） |
 | `hash` | 文字 n-gram のハッシュ。意味は扱えない。配線確認・テスト専用 |
