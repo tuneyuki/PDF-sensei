@@ -12,6 +12,7 @@ EPUB / PDF の書籍を元に、その本の「先生」として要約・解説
 - [06. GCP（Cloud Run）での運用構成](docs/design/06-deployment-gcp.md)（デプロイ手順: [deploy/README.md](deploy/README.md)）
 - [07. 回答までの処理とレイテンシ](docs/design/07-answer-latency.md)
 - [08. MVP1 の題材と入稿コストの試算](docs/design/08-mvp1-corpus-and-ingest-cost.md)（題材の取得: `scripts/fetch-corpus.sh`）
+- [09. レビューの考え方](docs/design/09-review-strategy.md)
 
 ## 動かし方
 
