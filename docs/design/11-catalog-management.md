@@ -99,6 +99,21 @@
 - フラグの意味と見せ方はフロントエンドが決める。こちらはキーの定義表（キー・説明・値の形）を共有し、値の形を検証して保存する。
 - **アクセスの制御はこちらで行う。** フロントエンドの表示とは別に、チャット API は利用者の区分で公開中の本（§1.3）にしか質問を受け付けない。フロントエンドには、本ごとの公開状態（区分別）もフラグと一緒に返す。
 
+#### 2.3.1 終わりのないキャンペーン（後の決定）
+
+「定番のおすすめ」のように **未来永劫続くキャンペーン** も想定する。期限付きのもの（夏の特集など）と同じ仕組みで扱い、次のように決める。
+
+| 論点 | 決定 |
+|---|---|
+| 無期限の表し方 | 終了日時を **空（NULL）= 無期限** とする。開始日時が空なら即時に有効。`9999-12-31` のような仮の日付は使わない（集計や表示で誤解を生むため） |
+| キーの種類 | 定義表でキーごとに「常設（終了日時なしを許す）」か「期間限定（終了日時が必須）」かを決める。期間限定のキーに終了日時なしで登録しようとしたら保存しない（付け忘れで特集が永久に残る事故を防ぐ） |
+| 同じキーを繰り返し使う | 1 冊に同じキーの期間を複数持てる（例: 去年の夏と今年の夏）。ただし同じ本・同じキー・同じ区分で期間が重なる行は保存しない |
+| 毎年の繰り返し | 「毎年 7/1〜8/31」のような繰り返しを 1 行で持てる（`recurrence = yearly` と月日の範囲、日本時間）。終了日時を空にすれば、毎年の特集をずっと続けられる |
+| キーの寿命 | キーは名前を変えず、再利用もしない（意味が変わると過去の記録と混ざる）。使わなくなったキーは削除せず「廃止」にする。廃止したキーは新しく付けられないが、過去の行と変更記録は残る |
+| 値の形の変化 | 長く使ううちに値の形（JSON）が変わりうるため、定義表で値の形に版を持たせ、各行に保存時の版を記録する。形を変えるときは古い形の行を読めるようにするか、移行する |
+| 本の公開との関係 | フラグは公開期間を延ばさない。無期限のフラグが付いていても、本の公開期間・権利の期間が終われば見えなくなる（§1.3 の判定はフラグと独立）。権利が近く切れる本に無期限のフラグが付いていれば一覧で警告する |
+| 記録 | 終わったフラグの行は消さずに残す（いつからいつまで何が付いていたかを説明できるように）。変更は `catalog_changes` に記録する |
+
 ### 2.4 サンプルプロンプト
 
 本の画面に、利用者が押すだけで質問できる例文を出す。
@@ -160,15 +175,24 @@ CREATE TABLE book_publications (      -- 公開期間（区分ごとに複数可
 
 CREATE TABLE flag_definitions (       -- 使えるフラグのキー（フロントエンドと共有）
   flag_key text PRIMARY KEY, description text,
-  value_schema jsonb,                 -- 値の形（JSON Schema）。保存時に検証する
+  kind text NOT NULL,                 -- perpetual（終了日時なしを許す）| limited（終了日時が必須）（§2.3.1）
+  status text NOT NULL DEFAULT 'active', -- active | deprecated（削除・再利用はしない）
+  value_schema jsonb,                 -- 値の形（JSON Schema）の現在の版。保存時に検証する
+  value_schema_version int NOT NULL DEFAULT 1,
   created_at timestamptz DEFAULT now()
 );
-CREATE TABLE book_flags (             -- 本ごとのキャンペーン用フラグ（§2.3）
+CREATE TABLE book_flags (             -- 本ごとのキャンペーン用フラグ（§2.3）。同じキーの期間を複数持てる
+  flag_id text PRIMARY KEY,
   book_id text REFERENCES books, flag_key text REFERENCES flag_definitions,
   value jsonb NOT NULL DEFAULT 'true', -- 並び順・見出しなど任意
+  value_schema_version int NOT NULL,  -- 保存時の値の形の版
   audience text,                      -- free | paid | NULL（両方）
-  starts_at timestamptz, ends_at timestamptz,
-  PRIMARY KEY (book_id, flag_key)
+  starts_at timestamptz,              -- NULL = 即時
+  ends_at timestamptz,                -- NULL = 無期限（limited のキーでは禁止）
+  recurrence text,                    -- NULL | yearly（毎年繰り返す）
+  recur_from text, recur_to text,     -- yearly のときの月日の範囲（'07-01'〜'08-31'、日本時間）
+  CHECK (ends_at IS NULL OR starts_at IS NULL OR starts_at < ends_at)
+  -- 同じ本・キー・区分で期間が重なる行は禁止（btree_gist の EXCLUDE 制約、または保存時の検証）
 );
 
 CREATE TABLE book_sample_prompts (
