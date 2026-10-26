@@ -18,6 +18,7 @@ EPUB / PDF の書籍を元に、その本の「先生」として要約・解説
 - [09. レビューの考え方](docs/design/09-review-strategy.md)
 - [10. 公開後の修正と版の運用](docs/design/10-post-release-fixes.md)
 - [11. 書籍カタログの管理](docs/design/11-catalog-management.md)
+- [12. テーブル定義（全体像）](docs/design/12-schema.md)
 
 ## 動かし方
 
