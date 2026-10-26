@@ -26,6 +26,10 @@
 | 根拠の受け渡し | Claude の引用機能（Citations）を使う。Vertex AI でも使える。ただし出力形式の固定（structured outputs）とは併用できない | [07](07-answer-latency.md) | [03](03-knowledge-units-and-teacher.md) §4.2 の「利用を検討する」 |
 | レビュー | 全件は見ない。例外キュー・抜き取り・質問テストで版ごとに受け入れを判定。個別の修正は `overrides.json` | [09](09-review-strategy.md) | [03](03-knowledge-units-and-teacher.md) の「1 冊 1 時間の人手確認」 |
 | 書籍カタログ | 本ごとに書誌情報・権利と公開期間・キャンペーン・サンプルプロンプトを持ち、一覧で管理する。カタログは版に属さず、入稿は初期値を提案するだけで人の編集が勝つ。公開できるかの判定は 1 か所（`visible_books`）にまとめる | [11](11-catalog-management.md) | — |
+| 無料・有料の出し分け | 書籍ごとに無料ユーザー用・有料ユーザー用の公開期間を持つ。有料ユーザーは無料公開中の本も読める | [11](11-catalog-management.md) §2.2.1 | — |
+| 終わった本の過去の会話 | 公開期間が終わった本（区分で読めなくなった本を含む）の過去の会話は見せない | [11](11-catalog-management.md) §6 | [10](10-post-release-fixes.md) §9 の「切り替え後も過去の引用を表示」 |
+| 書誌情報の取得 | ISBN からの外部取得はしない。原本から取れる値を初期値に、人が入力する | [11](11-catalog-management.md) §7 | [11](11-catalog-management.md) §1.2 の書誌検索 |
+| 管理画面 | 当面作らない。CSV での書き出し・取り込みとコマンドで管理する | [11](11-catalog-management.md) §4.2 | — |
 | キャンペーン | 本ごとの真偽値フラグではなく、期間・並び順・文言を持つ独立したレコードにして本を紐付ける | [11](11-catalog-management.md) §2.3 | — |
 | 公開後の修正 | ①止める ②個別に直す ③仕組みを直す ④原本が変わる、の 4 経路 | [10](10-post-release-fixes.md) | — |
 | `book_id` | ULID。初回入稿で発行し、改訂版は同じ `book_id` の新しい版。原本のハッシュは版ごとに持つ | [10](10-post-release-fixes.md) §8 | [02](02-ingestion-mvp-validation.md) の実装（ハッシュ由来） |
@@ -44,7 +48,7 @@
 | 画像抽出の適用範囲、段ごとのモデル割り当て、`en-d2l.pdf` を含めるか | [08](08-mvp1-corpus-and-ingest-cost.md) §7 |
 | 受け入れ基準の値、本の区分の決め方、検証に使うモデル | [09](09-review-strategy.md) §9 |
 | 前の版を残す期間、①を実行できる人、対応時間の目標、利用者への告知、止めた内容を過去の会話でも隠すか | [10](10-post-release-fixes.md) §10 |
-| 公開期間が終わった本の過去の会話、利用者の区分による出し分け、書誌情報の外部取得、管理画面の時期と権限、キャンペーンの表示場所 | [11](11-catalog-management.md) §7 |
+| 無料ユーザーへの有料限定本の見せ方、再び読めるようになった本の過去の会話、会話データの扱い、操作する人の権限、キャンペーンの表示場所 | [11](11-catalog-management.md) §7 |
 | ステージングと本番の分け方（プロジェクトを分けるか、インスタンスを分けるか）、昇格時に埋め込みを成果物に含めて運ぶか本番で計算し直すか | [06](06-deployment-gcp.md) §2.3 |
 | Vertex AI 上の Claude と埋め込みの単価・東京リージョンでの提供、Vertex のバッチ予測が Claude に使えるか | [06](06-deployment-gcp.md), [08](08-mvp1-corpus-and-ingest-cost.md) |
 
@@ -61,5 +65,5 @@
 | ステージング→本番の昇格 | 成果物から本番 DB への `sensei index`（書籍単位）と、その手順 | [06](06-deployment-gcp.md) §2.3 |
 | トークン数の概算 | `chunk.py` は和文 1 字 ≒ 1 トークン、[08](08-mvp1-corpus-and-ingest-cost.md) は 1.5 字 ≒ 1 トークン。少数のサンプルで実測し、どちらかに揃える | [08](08-mvp1-corpus-and-ingest-cost.md) §2 |
 | `scripts/fetch-corpus.sh` | 取得失敗時に終了コードを 0 以外にする。保存したファイルの先頭（`%PDF-` / `PK`）を検査し、エラーページの保存を防ぐ | 本書の見直し（2026-10-25） |
-| 書籍カタログ | `books` の拡張と、寄与者・権利・公開期間・キャンペーン・サンプルプロンプト・変更記録のテーブル、`visible_books` ビュー、CSV での書き出し・取り込み（`sensei catalog`）、承認済みサンプルプロンプトの質問テストへの自動追加 | [11](11-catalog-management.md) |
+| 書籍カタログ | `books` の拡張と、寄与者・権利・公開期間・キャンペーン・サンプルプロンプト・変更記録のテーブル、区分（無料 / 有料）を引数に取る `visible_books`、CSV での書き出し・取り込み（`sensei catalog`）、承認済みサンプルプロンプトの質問テストへの自動追加 | [11](11-catalog-management.md) |
 | LLM 呼び出しの thinking 設定 | Sonnet 5.5・Haiku 5.5 は既定で thinking が有効。軽い作業（文脈ヘッダ・検証）では明示的に抑える | [08](08-mvp1-corpus-and-ingest-cost.md) §4 |
